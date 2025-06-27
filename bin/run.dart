@@ -93,10 +93,9 @@ void main(List<String> args) async {
   }
 
   try {
-    // We now directly execute 'fvm flutter test' and rely on it to work.
     final process = await Process.start(
-      'fvm',
-      ['flutter', 'test', '--machine', ...filteredArgs],
+      'flutter',
+      ['test', '--machine', ...filteredArgs],
       workingDirectory: Directory.current.path,
       runInShell: Platform.isWindows ? false : true,
     );

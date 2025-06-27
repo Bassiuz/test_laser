@@ -24,8 +24,6 @@ The default `flutter test` command is powerful, but its output can be hard to re
 
 * **Time Tracking & Caching**: The runner caches the total number of tests and the duration of the last run, giving you an immediate and accurate progress estimate on subsequent runs.
 
-* **FVM Aware**: Automatically uses the project-specific Flutter version managed by FVM.
-
 ## Demo Output
 
 Here is what you can expect to see in your terminal.
