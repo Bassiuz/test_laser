@@ -24,31 +24,30 @@ void main(List<String> args) async {
   final activeTests = <int, _TestInfo>{};
   final errorDetails = <int, String>{};
   final stackTraces = <int, String>{};
-
+  final errorLog = <String>[]; // Buffer for stderr messages
+  
   final cacheData = _readCacheData();
   int totalTests = cacheData.totalTests;
   final lastRunDuration = cacheData.lastDuration;
-
+  
   int? exitCode;
-  bool hasPrintedError = false;
 
   final isDebugMode = args.contains('--debug');
   final isRerunFailed = args.contains('--rerun-failed');
-  var filteredArgs =
-      args.where((arg) => arg != '--debug' && arg != '--rerun-failed').toList();
-
+  var filteredArgs = args
+      .where((arg) => arg != '--debug' && arg != '--rerun-failed')
+      .toList();
+  
   // Start a stopwatch to time the current run.
   final stopwatch = Stopwatch()..start();
 
   // If --rerun-failed is used, construct a new set of arguments.
   if (isRerunFailed) {
     if (cacheData.failedTests.isEmpty) {
-      print('$_ansiYellow'
-          'No failed tests found in the last run. Nothing to rerun.'
-          '$_ansiReset');
+      print('$_ansiYellow' 'No failed tests found in the last run. Nothing to rerun.' '$_ansiReset');
       exit(0);
     }
-
+    
     // Group failed tests by file path to make the rerun much faster.
     final failedTestsByFile = <String, List<String>>{};
     for (final failure in cacheData.failedTests) {
@@ -63,9 +62,7 @@ void main(List<String> args) async {
     }
 
     if (failedTestsByFile.isEmpty) {
-      print('$_ansiRed'
-          'Could not find file paths for any failed tests. Cannot rerun.'
-          '$_ansiReset');
+      print('$_ansiRed' 'Could not find file paths for any failed tests. Cannot rerun.' '$_ansiReset');
       exit(1);
     }
 
@@ -73,23 +70,21 @@ void main(List<String> args) async {
     final filePathsToRun = failedTestsByFile.keys.toList();
 
     // Create a single regex to match all failed test names within those files.
-    final allFailedNames =
-        cacheData.failedTests.map((t) => RegExp.escape(t.info.name)).join('|');
+    final allFailedNames = cacheData.failedTests.map((t) => RegExp.escape(t.info.name)).join('|');
     final regex = '^($allFailedNames)\$';
 
     // The arguments will be the file paths, followed by the --name flag.
     filteredArgs = [...filePathsToRun, '--name', regex];
-
+    
     totalTests = cacheData.failedTests.length;
-    print('$_ansiYellow'
-        'Rerunning ${cacheData.failedTests.length} failed tests across ${filePathsToRun.length} files...'
-        '$_ansiReset');
+    print('$_ansiYellow' 'Rerunning ${cacheData.failedTests.length} failed tests across ${filePathsToRun.length} files...' '$_ansiReset');
   }
 
-  // Hides the cursor to prevent flickering during UI updates.
-  stdout.write(_ansiHideCursor);
-  // Reserve two lines for our sticky footer.
-  stdout.write('\n\n');
+  // In normal mode, hide the cursor and reserve space for the sticky footer.
+  if (!isDebugMode) {
+    stdout.write(_ansiHideCursor);
+    stdout.write('\n\n');
+  }
 
   try {
     // We now directly execute 'fvm flutter test' and rely on it to work.
@@ -102,28 +97,25 @@ void main(List<String> args) async {
 
     final processExitCode = process.exitCode;
 
-    // Listen to stderr for any errors from the test process itself.
-    process.stderr
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((errorLine) {
-      hasPrintedError = true;
-      _print('$_ansiRed[FLUTTER TEST ERROR] $errorLine$_ansiReset', to: stderr);
+    // In normal mode, collect errors to print at the end. In debug, print immediately.
+    process.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen((errorLine) {
+      if (isDebugMode) {
+        print('$_ansiRed[FLUTTER TEST ERROR] $errorLine$_ansiReset');
+      } else {
+        errorLog.add(errorLine);
+      }
     });
 
     int newTotalTests = 0;
     // Decode the JSON output from the test process line by line.
-    await for (final line in process.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())) {
+    await for (final line in process.stdout.transform(utf8.decoder).transform(const LineSplitter())) {
       try {
         final json = jsonDecode(line) as Map<String, dynamic>;
 
-        // In debug mode, pretty-print the JSON for full readability.
         if (isDebugMode) {
           const encoder = JsonEncoder.withIndent('  ');
           final formattedJson = encoder.convert(json);
-          _print('[DEBUG]\n$formattedJson');
+          print('[DEBUG]\n$formattedJson');
         }
 
         final type = json['type'] as String?;
@@ -165,8 +157,7 @@ void main(List<String> args) async {
               case 'error':
                 // When a test fails, pull its stored error details.
                 final error = errorDetails[testID] ?? 'Unknown error';
-                final stackTrace =
-                    stackTraces[testID] ?? 'No stack trace available';
+                final stackTrace = stackTraces[testID] ?? 'No stack trace available';
                 failed.add(_Failure(testInfo, error, stackTrace));
                 break;
             }
@@ -182,9 +173,10 @@ void main(List<String> args) async {
           stackTraces[testID] = json['stackTrace'] as String;
         }
 
-        // Always use the cached total for display during the run.
-        _updateDisplay(passed.length, failed.length, skipped.length, totalTests,
-            stopwatch.elapsed, lastRunDuration);
+        if (!isDebugMode) {
+          _updateDisplay(passed.length, failed.length, skipped.length, totalTests, stopwatch.elapsed, lastRunDuration);
+        }
+
       } catch (e) {
         // Ignore lines that aren't valid JSON.
       }
@@ -199,28 +191,38 @@ void main(List<String> args) async {
       }
       _writeCacheData(totalTests, stopwatch.elapsed, failed);
     }
+
   } finally {
-    // --- Final Summary ---
-    // Clear the two sticky lines before showing the cursor and printing the summary.
-    stdout.write('$_ansiCursorUp2\r$_ansiClearLine\n\r$_ansiClearLine');
+    if (!isDebugMode) {
+      // Clear the sticky lines before printing the final summary.
+      stdout.write('$_ansiCursorUp2\r$_ansiClearLine\n\r$_ansiClearLine');
+    }
     stdout.write(_ansiShowCursor);
   }
-
+  
+  // UPDATED: More specific error reporting.
   if (exitCode != 0 && passed.isEmpty && failed.isEmpty && skipped.isEmpty) {
-    print('--------------------------------------------------');
-    print(
-        '$_ansiBold$_ansiRed Test runner failed to start or crashed. $_ansiReset');
-    print('The command exited with code $exitCode before completing tests.');
-    print('Possible reasons:');
-    print(' - A problem with the project\'s dependencies or test setup.');
-    if (hasPrintedError) {
-      print(' - Review the [FLUTTER TEST ERROR] messages above for clues.');
+    print('\n--------------------------------------------------');
+    print('$_ansiBold$_ansiRed Test runner failed to start or crashed. $_ansiReset');
+    print('The command exited with code $exitCode before running any tests.');
+    
+    // If we captured specific errors, show them instead of a generic message.
+    if (errorLog.isNotEmpty) {
+      // CORRECTED: The typo `_ansiRedError` has been fixed.
+      print('\n$_ansiBold$_ansiRed' 'Error Output:$_ansiReset');
+      for (final error in errorLog) {
+        print(error);
+      }
+    } else {
+      print('\nPossible reasons:');
+      print(' - A problem with the project\'s dependencies or test setup.');
+      print(' - No "test" directory found in the current folder.');
     }
     print('--------------------------------------------------');
     exit(1);
   }
 
-  print('--------------------------------------------------');
+  print('\n--------------------------------------------------');
   print('$_ansiBold Test Run Summary $_ansiReset');
   print('--------------------------------------------------');
 
@@ -231,7 +233,7 @@ void main(List<String> args) async {
       final fileName = failure.info.url != null
           ? Uri.parse(failure.info.url!).pathSegments.last
           : 'Unknown File';
-
+      
       // The test name from the runner might be "group, test name".
       // We take the last part for a cleaner name.
       final testName = failure.info.name.split(',').last.trim();
@@ -239,14 +241,13 @@ void main(List<String> args) async {
       print('$_ansiRed[${fileName}] ${testName}$_ansiReset');
       // Indent the error message for readability.
       print('  ${failure.error.replaceAll('\n', '\n  ')}');
-
+      
       // Construct and print the rerun command if the test file path is available.
       if (failure.info.url != null) {
         try {
           final filePath = Uri.parse(failure.info.url!).toFilePath();
           // Use the full name from the runner for the --plain-name flag to be precise.
-          final rerunCommand =
-              "test_laser '$filePath' --plain-name '${failure.info.name}'";
+          final rerunCommand = "test_laser '$filePath' --plain-name '${failure.info.name}'";
           print('\n  To run this test again:');
           print('  $_ansiYellow$rerunCommand$_ansiReset');
         } catch (e) {
@@ -266,31 +267,28 @@ void main(List<String> args) async {
   print('--------------------------------------------------');
 
   if (failed.isNotEmpty) {
-    print(
-        'To rerun only the failed tests, use: $_ansiYellow`test_laser --rerun-failed`$_ansiReset');
+    print('To rerun only the failed tests, use: $_ansiYellow`test_laser --rerun-failed`$_ansiReset');
     print('--------------------------------------------------');
   }
 
   exit(failed.isEmpty ? 0 : 1);
 }
 
+
 /// Redraws the sticky footer with the current test status and progress bar.
-void _updateDisplay(int passed, int failed, int skipped, int total,
-    Duration elapsed, Duration lastDuration) {
+void _updateDisplay(int passed, int failed, int skipped, int total, Duration elapsed, Duration lastDuration) {
   final completed = passed + failed + skipped;
   final progress = total == 0 ? 0.0 : completed / total;
 
-  final timeText =
-      'Time: ${_formatDuration(elapsed)} / ${_formatDuration(lastDuration)}';
+  final timeText = 'Time: ${_formatDuration(elapsed)} / ${_formatDuration(lastDuration)}';
   final statusText = 'Passed: $_ansiGreen$passed$_ansiReset, '
       'Failed: $_ansiRed$failed$_ansiReset, '
       'Skipped: $_ansiYellow$skipped$_ansiReset, '
       'Total: $total | $timeText';
 
   final terminalWidth = stdout.hasTerminal ? stdout.terminalColumns : 80;
-  // Make progress bar slightly smaller to avoid wrapping issues.
-  final progressBarWidth = terminalWidth - 7;
-
+  final progressBarWidth = terminalWidth - 7; 
+  
   final filledWidth = (progressBarWidth * progress).round();
   final emptyWidth = progressBarWidth - filledWidth;
 
@@ -298,9 +296,8 @@ void _updateDisplay(int passed, int failed, int skipped, int total,
   final emptyBar = ' ' * emptyWidth;
   final percentage = (progress * 100).toStringAsFixed(0);
 
-  final progressBar =
-      '[$_ansiGreen$filledBar$_ansiReset$emptyBar] $percentage%';
-
+  final progressBar = '[$_ansiGreen$filledBar$_ansiReset$emptyBar] $percentage%';
+  
   // UPDATED: Move cursor up 2 lines, then write the status and progress bar
   // on separate lines.
   stdout.write(_ansiCursorUp1);
@@ -343,9 +340,9 @@ class _Failure {
   _Failure(this.info, this.error, this.stackTrace);
 
   Map<String, dynamic> toJson() => {
-        'name': info.name,
-        'url': info.url,
-      };
+    'name': info.name,
+    'url': info.url,
+  };
 }
 
 /// A class to hold the cached data.
@@ -361,19 +358,14 @@ _CacheData _readCacheData() {
   try {
     final cacheFile = File('${Directory.current.path}/$_cacheFileName');
     if (cacheFile.existsSync()) {
-      final json =
-          jsonDecode(cacheFile.readAsStringSync()) as Map<String, dynamic>;
+      final json = jsonDecode(cacheFile.readAsStringSync()) as Map<String, dynamic>;
       final totalTests = json['totalTests'] as int? ?? 0;
       final lastSeconds = json['lastDurationInSeconds'] as int? ?? 0;
       final failedTests = (json['failedTests'] as List<dynamic>?)
-              ?.map((e) => _Failure(
-                  _TestInfo(-1, e['name'] as String, e['url'] as String?),
-                  '',
-                  ''))
-              .toList() ??
-          [];
-      return _CacheData(
-          totalTests, Duration(seconds: lastSeconds), failedTests);
+          ?.map((e) => _Failure(
+                _TestInfo(-1, e['name'] as String, e['url'] as String?), '', ''))
+          .toList() ?? [];
+      return _CacheData(totalTests, Duration(seconds: lastSeconds), failedTests);
     }
   } catch (e) {
     // Ignore errors and return default.
