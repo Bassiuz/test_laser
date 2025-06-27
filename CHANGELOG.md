@@ -1,3 +1,6 @@
+## 0.0.3
+- Add example gif to README.
+
 ## 0.0.2
 - Improved error handling for flutter failures.
 

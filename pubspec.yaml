@@ -1,6 +1,6 @@
 name: test_laser
 description: A beautiful and informative command-line test runner for Flutter that makes your test output clean, readable, and actionable.
-version: 0.0.2
+version: 0.0.3
 repository: https://github.com/Bassiuz/test_laser
 homepage: https://github.com/Bassiuz/test_laser
 issue_tracker: https://github.com/Bassiuz/test_laser/issues
