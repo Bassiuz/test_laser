@@ -8,9 +8,6 @@ The default `flutter test` command is powerful, but its output can be hard to re
 
 **Test Laser** wraps the standard test runner and transforms its output into a user-friendly experience with a live progress bar, detailed summaries, and actionable failure reports.
 
-
-*(You can replace this with a real GIF of the tool in action after you record one!)*
-
 ## Features
 
 * **Clean Sticky Footer**: A live-updating footer shows a progress bar, test counts, and elapsed time without spamming your console.

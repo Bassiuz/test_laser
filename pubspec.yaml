@@ -1,7 +1,9 @@
 name: test_laser
-description: A sample command-line application.
-version: 1.0.0
-# repository: https://github.com/my_org/my_repo
+description: A beautiful and informative command-line test runner for Flutter that makes your test output clean, readable, and actionable.
+version: 0.0.1
+repository: https://github.com/Bassiuz/test_laser
+homepage: https://github.com/Bassiuz/test_laser
+issue_tracker: https://github.com/Bassiuz/test_laser/issues
 
 executables:
   test_laser:
@@ -11,8 +13,7 @@ environment:
   sdk: ^3.4.4
 
 # Add regular dependencies here.
-dependencies:
-    path: ^1.8.0
+# dependencies:
 
 dev_dependencies:
   lints: ^3.0.0

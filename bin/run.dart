@@ -10,7 +10,6 @@ const String _ansiReset = '\u001b[0m';
 const String _ansiHideCursor = '\u001b[?25l';
 const String _ansiShowCursor = '\u001b[?25h';
 const String _ansiClearLine = '\u001b[K';
-const String _ansiCursorUp3 = '\u001b[3A';
 const String _ansiCursorUp2 = '\u001b[2A';
 const String _ansiCursorUp1 = '\u001b[1A';
 
@@ -49,7 +48,7 @@ void main(List<String> args) async {
       exit(0);
     }
     
-    // NEW: Group failed tests by file path to make the rerun much faster.
+    // Group failed tests by file path to make the rerun much faster.
     final failedTestsByFile = <String, List<String>>{};
     for (final failure in cacheData.failedTests) {
       if (failure.info.url != null) {
@@ -119,7 +118,7 @@ void main(List<String> args) async {
         final type = json['type'] as String?;
 
         if (type == 'group') {
-          // CORRECTED: Only count top-level groups to avoid double-counting.
+          // Only count top-level groups to avoid double-counting.
           final group = json['group'] as Map<String, dynamic>;
           if (group['parentID'] == null) {
             newTotalTests += (group['testCount'] as int?) ?? 0;
@@ -153,7 +152,7 @@ void main(List<String> args) async {
                 break;
               case 'failure':
               case 'error':
-                // CORRECTED: When a test fails, pull its stored error details.
+                // When a test fails, pull its stored error details.
                 final error = errorDetails[testID] ?? 'Unknown error';
                 final stackTrace = stackTraces[testID] ?? 'No stack trace available';
                 failed.add(_Failure(testInfo, error, stackTrace));
@@ -166,7 +165,7 @@ void main(List<String> args) async {
           stackTraces.remove(testID);
         } else if (type == 'error') {
           final testID = json['testID'] as int;
-          // CORRECTED: Store error details when they arrive. They come before 'testDone'.
+          // Store error details when they arrive. They come before 'testDone'.
           errorDetails[testID] = json['error'] as String;
           stackTraces[testID] = json['stackTrace'] as String;
         }
