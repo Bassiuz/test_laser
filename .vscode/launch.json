@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Test Laser",
+      "request": "launch",
+      "type": "dart",
+      "program": "bin/run.dart",
+      "args": [
+        "--debug", 
+        "test/core/services/contact_device_info_service_test.dart"
+      ],
+      // IMPORTANT: Change this to the absolute path of the
+      // Flutter project you want to run the tests on.
+      "cwd": "/Users/bassiuz/MedApp/medappv2/medapp_pharmacy"
+    }
+  ]
+}
