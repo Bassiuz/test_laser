@@ -1,3 +1,6 @@
+## 0.0.2
+- Improved error handling for flutter failures.
+
 ## 0.0.1
 
 - Initial stable release of Test Laser.

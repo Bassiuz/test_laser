@@ -10,7 +10,7 @@ The default `flutter test` command is powerful, but its output can be hard to re
 
 ## Example
 
-![Demo of Test Laser in action](assets/example.gif)
+![Demo of Test Laser in action](https://raw.githubusercontent.com/bassiuz/test_laser/main/assets/example.gif)
 
 ## Features
 
