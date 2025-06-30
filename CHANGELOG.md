@@ -1,3 +1,6 @@
+## 0.0.5
+- Add intelligent watch function.
+
 ## 0.0.4
 - Do not directly use fvm, instead use flutter test directly.
 

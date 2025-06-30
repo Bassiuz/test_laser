@@ -96,6 +96,47 @@ To save time, you can instantly rerun only the tests that failed in the last ses
 test_laser --rerun-failed
 ```
 
+### Watch Mode (--watch)
+
+test_laser includes a smart watch mode for continuous testing during development. It intelligently reruns only the necessary tests, providing a fast and efficient workflow for fixing failures.
+
+Usage
+
+To start the watch mode, add the --watch flag to the command:
+
+```bash
+#### For Flutter projects
+flutter pub run test_laser --watch
+
+#### For pure Dart projects (if you have an alias/path set up)
+test_laser --watch
+```
+
+The watcher will take over your terminal, running tests automatically when you save a file.
+
+Smart Rerun Workflow
+
+The watch mode is more than a simple file watcher; it follows a specific state machine to make your development cycle as fast as possible:
+
+    Initial Full Run: When started, the watcher immediately performs a full run of all tests in your project.
+
+        If all tests pass, it exits successfully. There's nothing to watch!
+
+    Fast Failure Fixing: If the initial run has failures, the watcher enters a special "rerun-failed" mode.
+
+        On the next file change (when you save a file), it will only run the specific tests that just failed.
+
+        This provides a nearly instantaneous feedback loop while you are fixing bugs, as it doesn't need to run your entire test suite.
+
+    Final Verification Run: Once you have fixed the tests and the "rerun-failed" cycle passes, the watcher performs one last, full test run.
+
+        This is a crucial safety check to ensure that your fixes haven't accidentally broken other parts of your code.
+
+    Completion: The watch mode only stops and exits after a full verification run completes with 100% of tests passing.
+
+This workflow ensures that you get the speed of rerunning only failed tests and the safety of a full regression test before you consider your work done.
+
+
 ### Run a Specific File or Test
 
 You can pass arguments just like you would to `flutter test`.

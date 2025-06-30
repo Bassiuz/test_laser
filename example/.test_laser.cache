@@ -1,1 +1,1 @@
-{"totalTests":12,"lastDurationInSeconds":3,"failedTests":[{"name":"Always fails","url":"file:///Users/bassiuz/Projects/test_laser/example/test/test_example_test.dart"},{"name":"Always fails","url":"file:///Users/bassiuz/Projects/test_laser/example/test/another_test_example_test.dart"}]}
+{"totalTests":6,"lastDurationInSeconds":3,"failedTests":[{"name":"loading /Users/bassiuz/Projects/test_laser/example/test/another_test_example_test.dart","url":null},{"name":"Always fails","url":"file:///Users/bassiuz/Projects/test_laser/example/test/test_example_test.dart"}]}
