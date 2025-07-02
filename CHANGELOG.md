@@ -1,3 +1,7 @@
+## 0.0.6
+- Fix overflow issue in progress bar.
+- Fix pub points
+
 ## 0.0.5
 - Add intelligent watch function.
 

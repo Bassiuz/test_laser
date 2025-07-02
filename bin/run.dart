@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 // ANSI escape codes for cursor control and text styling.
 const String _ansiRed = '\u001b[31m';
@@ -77,7 +78,8 @@ Future<void> _runWatchMode(List<String> initialArgs) async {
           success = await _runSingleTest(initialArgs);
 
           if (success) {
-            print('\n$_ansiGreen$_ansiBold All tests passed! Watch mode complete. $_ansiReset');
+            print(
+                '\n$_ansiGreen$_ansiBold All tests passed! Watch mode complete. $_ansiReset');
             await watcherSubscription.cancel();
             debouncer.cancel();
             exit(0);
@@ -159,13 +161,15 @@ Future<bool> _runSingleTest(List<String> args) async {
 
   final isDebugMode = args.contains('--debug');
   final isRerunFailed = args.contains('--rerun-failed');
-  var filteredArgs = args.where((arg) => arg != '--debug' && arg != '--rerun-failed').toList();
+  var filteredArgs =
+      args.where((arg) => arg != '--debug' && arg != '--rerun-failed').toList();
 
   final stopwatch = Stopwatch()..start();
 
   if (isRerunFailed) {
     if (cacheData.failedTests.isEmpty) {
-      print('$_ansiYellow No failed tests found in the last run. Nothing to rerun. $_ansiReset');
+      print(
+          '$_ansiYellow No failed tests found in the last run. Nothing to rerun. $_ansiReset');
       return true; // A run with nothing to do is a "success"
     }
 
@@ -180,12 +184,14 @@ Future<bool> _runSingleTest(List<String> args) async {
     }
 
     if (failedTestsByFile.isEmpty) {
-      print('$_ansiRed Could not find file paths for any failed tests. Cannot rerun. $_ansiReset');
+      print(
+          '$_ansiRed Could not find file paths for any failed tests. Cannot rerun. $_ansiReset');
       return false;
     }
 
     final filePathsToRun = failedTestsByFile.keys.toList();
-    final allFailedNames = cacheData.failedTests.map((t) => RegExp.escape(t.info.name)).join('|');
+    final allFailedNames =
+        cacheData.failedTests.map((t) => RegExp.escape(t.info.name)).join('|');
     final regex = '^($allFailedNames)\$';
     filteredArgs = [...filePathsToRun, '--name', regex];
     totalTests = cacheData.failedTests.length;
@@ -208,7 +214,10 @@ Future<bool> _runSingleTest(List<String> args) async {
 
     final processExitCode = process.exitCode;
 
-    process.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen((errorLine) {
+    process.stderr
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen((errorLine) {
       if (isDebugMode) {
         print('$_ansiRed[FLUTTER TEST ERROR] $errorLine$_ansiReset');
       } else {
@@ -217,8 +226,9 @@ Future<bool> _runSingleTest(List<String> args) async {
     });
 
     int newTotalTests = 0;
-    await for (final line
-        in process.stdout.transform(utf8.decoder).transform(const LineSplitter())) {
+    await for (final line in process.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())) {
       try {
         final json = jsonDecode(line) as Map<String, dynamic>;
         if (isDebugMode) {
@@ -254,7 +264,8 @@ Future<bool> _runSingleTest(List<String> args) async {
               case 'failure':
               case 'error':
                 final error = errorDetails[testID] ?? 'Unknown error';
-                final stackTrace = stackTraces[testID] ?? 'No stack trace available';
+                final stackTrace =
+                    stackTraces[testID] ?? 'No stack trace available';
                 failed.add(_Failure(testInfo, error, stackTrace));
                 break;
             }
@@ -269,8 +280,8 @@ Future<bool> _runSingleTest(List<String> args) async {
         }
 
         if (!isDebugMode) {
-          _updateDisplay(passed.length, failed.length, skipped.length, totalTests,
-              stopwatch.elapsed, lastRunDuration);
+          _updateDisplay(passed.length, failed.length, skipped.length,
+              totalTests, stopwatch.elapsed, lastRunDuration);
         }
       } catch (e) {/* Ignore JSON parse errors */}
     }
@@ -289,8 +300,9 @@ Future<bool> _runSingleTest(List<String> args) async {
   }
 
   if (exitCode != 0 && passed.isEmpty && failed.isEmpty && skipped.isEmpty) {
-    print('\n--------------------------------------------------');
-    print('$_ansiBold$_ansiRed Test runner failed to start or crashed. $_ansiReset');
+    _writeScreenFullLine(addNewLine: true);
+    print(
+        '$_ansiBold$_ansiRed Test runner failed to start or crashed. $_ansiReset');
     print('The command exited with code $exitCode before running any tests.');
     if (errorLog.isNotEmpty) {
       print('\n$_ansiBold$_ansiRed Error Output:$_ansiReset');
@@ -300,13 +312,13 @@ Future<bool> _runSingleTest(List<String> args) async {
       print(' - A problem with your project\'s dependencies or test setup.');
       print(' - No "test" directory found in the current folder.');
     }
-    print('--------------------------------------------------');
+    _writeScreenFullLine();
     return false;
   }
 
-  print('\n--------------------------------------------------');
+  _writeScreenFullLine(addNewLine: true);
   print('$_ansiBold Test Run Summary $_ansiReset');
-  print('--------------------------------------------------');
+  _writeScreenFullLine();
 
   if (failed.isNotEmpty) {
     print('\n$_ansiBold$_ansiRed FAILED TESTS: $_ansiReset\n');
@@ -319,8 +331,21 @@ Future<bool> _runSingleTest(List<String> args) async {
       print('  ${failure.error.replaceAll('\n', '\n  ')}');
       if (failure.info.url != null) {
         try {
-          final filePath = Uri.parse(failure.info.url!).toFilePath();
-          final rerunCommand = "test_laser '$filePath' --plain-name '${failure.info.name}'";
+          String filePath = Uri.parse(failure.info.url!).toFilePath();
+
+          // check the current path, and see if the file path is inside current path. If so, remove that from the file path.
+
+          final currentPath = Directory.current.path;
+
+          if (filePath.startsWith(currentPath)) {
+            filePath = filePath.substring(currentPath.length + 1);
+            print('  File: $filePath');
+          } else {
+            print('  File: $filePath');
+          }
+
+          final rerunCommand =
+              "test_laser '$filePath' --plain-name '${failure.info.name}'";
           print('\n  To run this test again:');
           print('  $_ansiYellow$rerunCommand$_ansiReset');
         } catch (e) {/* Ignore */}
@@ -334,12 +359,12 @@ Future<bool> _runSingleTest(List<String> args) async {
       '$_ansiYellow${skipped.length} skipped$_ansiReset, '
       'Total: $totalTests, Duration: ${_formatDuration(stopwatch.elapsed)}';
   print(summary);
-  print('--------------------------------------------------');
+  _writeScreenFullLine();
 
   if (failed.isNotEmpty) {
     print(
         'To rerun only the failed tests, use: $_ansiYellow`test_laser --rerun-failed`$_ansiReset');
-    print('--------------------------------------------------');
+    _writeScreenFullLine();
   }
 
   return failed.isEmpty;
@@ -347,11 +372,12 @@ Future<bool> _runSingleTest(List<String> args) async {
 
 // --- ALL HELPER FUNCTIONS BELOW ARE UNCHANGED FROM YOUR ORIGINAL ---
 
-void _updateDisplay(
-    int passed, int failed, int skipped, int total, Duration elapsed, Duration lastDuration) {
+void _updateDisplay(int passed, int failed, int skipped, int total,
+    Duration elapsed, Duration lastDuration) {
   final completed = passed + failed + skipped;
-  final progress = total == 0 ? 0.0 : completed / total;
-  final timeText = 'Time: ${_formatDuration(elapsed)} / ${_formatDuration(lastDuration)}';
+  final progress = min(1, total == 0 ? 0.0 : completed / total);
+  final timeText =
+      'Time: ${_formatDuration(elapsed)} / ${_formatDuration(lastDuration)}';
   final statusText = 'Passed: $_ansiGreen$passed$_ansiReset, '
       'Failed: $_ansiRed$failed$_ansiReset, '
       'Skipped: $_ansiYellow$skipped$_ansiReset, '
@@ -363,11 +389,24 @@ void _updateDisplay(
   final filledBar = '█' * filledWidth;
   final emptyBar = ' ' * emptyWidth;
   final percentage = (progress * 100).toStringAsFixed(0);
-  final progressBar = '[$_ansiGreen$filledBar$_ansiReset$emptyBar] $percentage%';
+  final progressBar =
+      '[$_ansiGreen$filledBar$_ansiReset$emptyBar] $percentage%';
 
   stdout.write(_ansiCursorUp1);
   stdout.writeln('\r$_ansiClearLine$statusText');
   stdout.write('\r$_ansiClearLine$progressBar');
+}
+
+void _writeScreenFullLine({bool addNewLine = false}) {
+  final terminalWidth = stdout.hasTerminal ? stdout.terminalColumns : 80;
+
+  String line = '-' * terminalWidth;
+
+  if (addNewLine) {
+    line = '\n$line';
+  }
+
+  print(line);
 }
 
 class _TestInfo {
@@ -406,15 +445,19 @@ _CacheData _readCacheData() {
   try {
     final cacheFile = File('${Directory.current.path}/$_cacheFileName');
     if (cacheFile.existsSync()) {
-      final json = jsonDecode(cacheFile.readAsStringSync()) as Map<String, dynamic>;
+      final json =
+          jsonDecode(cacheFile.readAsStringSync()) as Map<String, dynamic>;
       final totalTests = json['totalTests'] as int? ?? 0;
       final lastSeconds = json['lastDurationInSeconds'] as int? ?? 0;
       final failedTests = (json['failedTests'] as List<dynamic>?)
-              ?.map(
-                  (e) => _Failure(_TestInfo(-1, e['name'] as String, e['url'] as String?), '', ''))
+              ?.map((e) => _Failure(
+                  _TestInfo(-1, e['name'] as String, e['url'] as String?),
+                  '',
+                  ''))
               .toList() ??
           [];
-      return _CacheData(totalTests, Duration(seconds: lastSeconds), failedTests);
+      return _CacheData(
+          totalTests, Duration(seconds: lastSeconds), failedTests);
     }
   } catch (e) {
     // Ignore errors and return default.
