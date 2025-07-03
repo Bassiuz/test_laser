@@ -1,3 +1,6 @@
+## 0.0.7
+- Better support for widget tests.
+
 ## 0.0.6
 - Fix overflow issue in progress bar.
 - Fix pub points

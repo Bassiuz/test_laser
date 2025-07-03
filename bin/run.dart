@@ -44,17 +44,40 @@ class _Debouncer {
 
 /// Script entry point. Decides whether to run once or start watch mode.
 void main(List<String> args) async {
+  if (args.contains('--version')) {
+    await _printFlutterVersion();
+  }
+
   final isWatchMode = args.contains('--watch');
 
+  final testRunnerArgs =
+      args.where((arg) => arg != '--watch' && arg != '--version').toList();
+
   if (isWatchMode) {
-    // In watch mode, filter out the --watch arg and start the watcher.
-    final filteredArgs = args.where((arg) => arg != '--watch').toList();
-    await _runWatchMode(filteredArgs);
+    await _runWatchMode(testRunnerArgs);
   } else {
-    // For a single run, just execute the tests and exit.
-    final success = await _runSingleTest(args);
+    final success = await _runSingleTest(testRunnerArgs);
     exit(success ? 0 : 1);
   }
+}
+
+/// A helper function to run `flutter --version` and print the output.
+Future<void> _printFlutterVersion() async {
+  print('$_ansiBold--- Flutter Version ---$_ansiReset');
+  try {
+    final result = await Process.run('flutter', ['--version']);
+    if (result.exitCode == 0) {
+      print(result.stdout.toString().trim());
+    } else {
+      // CORRECTED: Added space after the ANSI code.
+      print(
+          '$_ansiRed Could not determine Flutter version. Error:\n${result.stderr}$_ansiReset');
+    }
+  } catch (e) {
+    // CORRECTED: Added space after the ANSI code.
+    print('$_ansiRed Error running "flutter --version": $e$_ansiReset');
+  }
+  print('$_ansiBold-----------------------$_ansiReset\n');
 }
 
 /// Manages the file watcher and the test execution state machine.
@@ -92,14 +115,13 @@ Future<void> _runWatchMode(List<String> initialArgs) async {
 
         case _WatchState.needsFailedRun:
           print('$_ansiBold Rerunning failed tests...$_ansiReset');
-          // Add the --rerun-failed flag for this specific run.
           success = await _runSingleTest([...initialArgs, '--rerun-failed']);
 
           if (success) {
             state = _WatchState.needsFullRun;
             print(
                 '\n$_ansiGreen$_ansiBold Previously failed tests passed. Performing final verification run...$_ansiReset');
-            sleep(const Duration(seconds: 1)); // Brief pause for readability
+            sleep(const Duration(seconds: 1));
             shouldContinueImmediateLoop = true;
           } else {
             print(
@@ -121,17 +143,14 @@ Future<void> _runWatchMode(List<String> initialArgs) async {
       final path = event.path;
       final separator = Platform.pathSeparator;
 
-      // Define patterns for generated files/folders to ignore.
       final isCacheFile = path.endsWith(_cacheFileName);
       final isDartToolFile = path.contains('$separator.dart_tool$separator');
       final isBuildFile = path.contains('${separator}build$separator');
 
-      // If the path matches any ignored pattern, do nothing.
       if (isCacheFile || isDartToolFile || isBuildFile) {
         return;
       }
 
-      // Otherwise, trigger a new test run.
       debouncer.call(triggerTestRun);
     },
     onError: (error) => print('$_ansiRed Watcher error: $error $_ansiReset'),
@@ -141,22 +160,18 @@ Future<void> _runWatchMode(List<String> initialArgs) async {
   await triggerTestRun();
 }
 
-/// This is your original `main` function, refactored to be callable
-/// and to return a boolean indicating success or failure.
+/// Runs a single test process and returns true on success.
 Future<bool> _runSingleTest(List<String> args) async {
-  // --- State Variables ---
   final passed = <String>[];
   final failed = <_Failure>[];
   final skipped = <String>[];
   final activeTests = <int, _TestInfo>{};
-  final errorDetails = <int, String>{};
-  final stackTraces = <int, String>{};
+  final activeErrorPrints = <int, String>{};
   final errorLog = <String>[];
 
   final cacheData = _readCacheData();
   int totalTests = cacheData.totalTests;
   final lastRunDuration = cacheData.lastDuration;
-
   int? exitCode;
 
   final isDebugMode = args.contains('--debug');
@@ -170,7 +185,7 @@ Future<bool> _runSingleTest(List<String> args) async {
     if (cacheData.failedTests.isEmpty) {
       print(
           '$_ansiYellow No failed tests found in the last run. Nothing to rerun. $_ansiReset');
-      return true; // A run with nothing to do is a "success"
+      return true;
     }
 
     final failedTestsByFile = <String, List<String>>{};
@@ -263,20 +278,22 @@ Future<bool> _runSingleTest(List<String> args) async {
                 break;
               case 'failure':
               case 'error':
-                final error = errorDetails[testID] ?? 'Unknown error';
-                final stackTrace =
-                    stackTraces[testID] ?? 'No stack trace available';
-                failed.add(_Failure(testInfo, error, stackTrace));
+                final errorLog = activeErrorPrints[testID] ??
+                    'Unknown error: No exception log was captured.';
+                failed.add(_Failure(testInfo, errorLog));
                 break;
             }
           }
           activeTests.remove(testID);
-          errorDetails.remove(testID);
-          stackTraces.remove(testID);
-        } else if (type == 'error') {
+          activeErrorPrints.remove(testID);
+        } else if (type == 'print') {
           final testID = json['testID'] as int;
-          errorDetails[testID] = json['error'] as String;
-          stackTraces[testID] = json['stackTrace'] as String;
+          final message = json['message'] as String;
+
+          if (message.startsWith('══╡ EXCEPTION CAUGHT') &&
+              !activeErrorPrints.containsKey(testID)) {
+            activeErrorPrints[testID] = message;
+          }
         }
 
         if (!isDebugMode) {
@@ -326,22 +343,22 @@ Future<bool> _runSingleTest(List<String> args) async {
       final fileName = failure.info.url != null
           ? Uri.parse(failure.info.url!).pathSegments.last
           : 'Unknown File';
-      final testName = failure.info.name.split(',').last.trim();
-      print('$_ansiRed[$fileName] $testName$_ansiReset');
-      print('  ${failure.error.replaceAll('\n', '\n  ')}');
+      final testName = failure.info.name;
+
+      print('$_ansiRed[FAIL] $fileName: $testName$_ansiReset');
+
+      final primaryError = _extractPrimaryError(failure.fullErrorLog);
+
+      print('\n══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞══════════');
+      print('$_ansiBold$primaryError$_ansiReset');
+      print('════════════════════════════════════════════════════════════');
+
       if (failure.info.url != null) {
         try {
           String filePath = Uri.parse(failure.info.url!).toFilePath();
-
-          // check the current path, and see if the file path is inside current path. If so, remove that from the file path.
-
           final currentPath = Directory.current.path;
-
           if (filePath.startsWith(currentPath)) {
             filePath = filePath.substring(currentPath.length + 1);
-            print('  File: $filePath');
-          } else {
-            print('  File: $filePath');
           }
 
           final rerunCommand =
@@ -370,7 +387,22 @@ Future<bool> _runSingleTest(List<String> args) async {
   return failed.isEmpty;
 }
 
-// --- ALL HELPER FUNCTIONS BELOW ARE UNCHANGED FROM YOUR ORIGINAL ---
+String _extractPrimaryError(String log) {
+  final lines = log.split('\n');
+
+  var startIndex = lines.indexWhere((line) => line.contains('was thrown'));
+  if (startIndex == -1) return log;
+
+  startIndex++;
+
+  var endIndex = lines.indexWhere(
+      (line) =>
+          line.isEmpty || line.startsWith('When the exception was thrown'),
+      startIndex);
+  if (endIndex == -1) endIndex = lines.length;
+
+  return lines.sublist(startIndex, endIndex).join('\n').trim();
+}
 
 void _updateDisplay(int passed, int failed, int skipped, int total,
     Duration elapsed, Duration lastDuration) {
@@ -399,13 +431,8 @@ void _updateDisplay(int passed, int failed, int skipped, int total,
 
 void _writeScreenFullLine({bool addNewLine = false}) {
   final terminalWidth = stdout.hasTerminal ? stdout.terminalColumns : 80;
-
-  String line = '-' * terminalWidth;
-
-  if (addNewLine) {
-    line = '\n$line';
-  }
-
+  String line = '─' * terminalWidth;
+  if (addNewLine) line = '\n$line';
   print(line);
 }
 
@@ -415,19 +442,20 @@ class _TestInfo {
   final String? url;
   _TestInfo(this.id, this.name, this.url);
   factory _TestInfo.fromJson(Map<String, dynamic> json) {
+    final url = json['root_url'] as String? ?? json['url'] as String?;
     return _TestInfo(
       json['id'] as int,
       json['name'] as String,
-      json['url'] as String?,
+      url,
     );
   }
 }
 
 class _Failure {
   final _TestInfo info;
-  String error;
-  String stackTrace;
-  _Failure(this.info, this.error, this.stackTrace);
+  String fullErrorLog;
+  _Failure(this.info, this.fullErrorLog);
+
   Map<String, dynamic> toJson() => {
         'name': info.name,
         'url': info.url,
@@ -451,9 +479,7 @@ _CacheData _readCacheData() {
       final lastSeconds = json['lastDurationInSeconds'] as int? ?? 0;
       final failedTests = (json['failedTests'] as List<dynamic>?)
               ?.map((e) => _Failure(
-                  _TestInfo(-1, e['name'] as String, e['url'] as String?),
-                  '',
-                  ''))
+                  _TestInfo(-1, e['name'] as String, e['url'] as String?), ''))
               .toList() ??
           [];
       return _CacheData(
