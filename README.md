@@ -14,15 +14,11 @@ The default `flutter test` command is powerful, but its output can be hard to re
 
 ## Features
 
-* **Clean Sticky Footer**: A live-updating footer shows a progress bar, test counts, and elapsed time without spamming your console.
-
-* **Detailed Failure Reports**: Failures are summarized at the end with the "Expected vs. Actual" output, making it easy to see what went wrong.
-
-* **Rerun Individual Tests**: Each failed test summary includes a copy-pasteable command to rerun only that specific test.
-
-* **Rerun All Failed Tests**: Use the `--rerun-failed` flag to instantly run all the tests that failed in the last session.
-
-* **Time Tracking & Caching**: The runner caches the total number of tests and the duration of the last run, giving you an immediate and accurate progress estimate on subsequent runs.
+  * **Clean Sticky Footer**: A live-updating footer shows a progress bar, test counts, and elapsed time without spamming your console.
+  * **Detailed Failure Reports**: Failures are summarized at the end with the "Expected vs. Actual" output, making it easy to see what went wrong.
+  * **Rerun Individual Tests**: Each failed test summary includes a copy-pasteable command to rerun only that specific test.
+  * **Rerun All Failed Tests**: Use the `--rerun-failed` flag to instantly run all the tests that failed in the last session.
+  * **Time Tracking & Caching**: The runner caches the total number of tests and the duration of the last run, giving you an immediate and accurate progress estimate on subsequent runs.
 
 ## Demo Output
 
@@ -96,46 +92,72 @@ To save time, you can instantly rerun only the tests that failed in the last ses
 test_laser --rerun-failed
 ```
 
-### Watch Mode (--watch)
+### Watch Mode (`--watch`)
 
-test_laser includes a smart watch mode for continuous testing during development. It intelligently reruns only the necessary tests, providing a fast and efficient workflow for fixing failures.
+`test_laser` includes a smart watch mode for continuous testing during development. It intelligently reruns only the necessary tests, providing a fast and efficient workflow for fixing failures.
 
-Usage
+#### Usage
 
-To start the watch mode, add the --watch flag to the command:
+To start the watch mode, add the `--watch` flag to the command:
 
 ```bash
-#### For Flutter projects
+# For Flutter projects
 flutter pub run test_laser --watch
 
-#### For pure Dart projects (if you have an alias/path set up)
+# For pure Dart projects (if you have an alias/path set up)
 test_laser --watch
 ```
 
 The watcher will take over your terminal, running tests automatically when you save a file.
 
-Smart Rerun Workflow
+#### Smart Rerun Workflow
 
 The watch mode is more than a simple file watcher; it follows a specific state machine to make your development cycle as fast as possible:
 
-    Initial Full Run: When started, the watcher immediately performs a full run of all tests in your project.
-
-        If all tests pass, it exits successfully. There's nothing to watch!
-
-    Fast Failure Fixing: If the initial run has failures, the watcher enters a special "rerun-failed" mode.
-
-        On the next file change (when you save a file), it will only run the specific tests that just failed.
-
-        This provides a nearly instantaneous feedback loop while you are fixing bugs, as it doesn't need to run your entire test suite.
-
-    Final Verification Run: Once you have fixed the tests and the "rerun-failed" cycle passes, the watcher performs one last, full test run.
-
-        This is a crucial safety check to ensure that your fixes haven't accidentally broken other parts of your code.
-
-    Completion: The watch mode only stops and exits after a full verification run completes with 100% of tests passing.
+1.  **Initial Full Run**: When started, the watcher immediately performs a full run of all tests in your project.
+      * If all tests pass, it exits successfully. There's nothing to watch\!
+2.  **Fast Failure Fixing**: If the initial run has failures, the watcher enters a special "rerun-failed" mode.
+      * On the next file change (when you save a file), it will **only** run the specific tests that just failed.
+      * This provides a nearly instantaneous feedback loop while you are fixing bugs, as it doesn't need to run your entire test suite.
+3.  **Final Verification Run**: Once you have fixed the tests and the "rerun-failed" cycle passes, the watcher performs one last, full test run.
+      * This is a crucial safety check to ensure that your fixes haven't accidentally broken other parts of your code.
+4.  **Completion**: The watch mode only stops and exits after a **full verification run** completes with 100% of tests passing.
 
 This workflow ensures that you get the speed of rerunning only failed tests and the safety of a full regression test before you consider your work done.
 
+### Controlling Test Order with a Random Seed
+
+By default, tests run in a fixed, predictable order. You can use the `--test-randomize-ordering-seed` flag to run them in a different order, which is a great way to find hidden dependencies between tests. `test_laser` provides a convenient way to manage this setting.
+
+**Note:** This is an administrative command. It sets the seed for future runs and then exits; it does not run tests at the same time.
+
+#### Set a Specific Seed
+
+To use the same random order for every run (useful for reproducing a specific failure):
+
+```bash
+test_laser --set-randomize-ordering-seed=12345
+```
+
+Now, every time you run `test_laser`, it will start by showing `Running with ordering seed: 12345` and use that seed.
+
+#### Use a New Random Seed for Every Run
+
+To have the test runner generate a new, unpredictable seed for each run (useful for CI):
+
+```bash
+test_laser --set-randomize-ordering-seed=random
+```
+
+#### Return to Default (Fixed) Order
+
+To remove the seed and go back to the default, non-randomized test order:
+
+```bash
+test_laser --set-randomize-ordering-seed=fixed
+# OR
+test_laser --set-randomize-ordering-seed
+```
 
 ### Run a Specific File or Test
 

@@ -36,4 +36,12 @@ void main() {
     await Future.delayed(const Duration(seconds: 2));
     expect(true, isTrue);
   });
+
+  test('Will cause an error', () async {
+    bool? nullableBool;
+
+    bool nonNullableBool = nullableBool!; // This will throw an error
+
+    expect(true, nonNullableBool);
+  });
 }

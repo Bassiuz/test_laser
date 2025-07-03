@@ -1,3 +1,6 @@
+## 0.0.8
+- Add support for fixed seed setting.
+
 ## 0.0.7
 - Better support for widget tests.
 

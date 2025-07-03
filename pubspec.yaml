@@ -1,6 +1,6 @@
 name: test_laser
 description: A beautiful and informative command-line test runner for Flutter that makes your test output clean, readable, and actionable.
-version: 0.0.7
+version: 0.0.8
 repository: https://github.com/Bassiuz/test_laser
 homepage: https://github.com/Bassiuz/test_laser
 issue_tracker: https://github.com/Bassiuz/test_laser/issues
@@ -13,11 +13,11 @@ environment:
   sdk: '>=2.17.0 <4.0.0'
 
 dependencies:
-  watcher: ^1.1.0
+  watcher: ^1.1.2
   async: ^2.11.0
+  test: ^1.25.2
   lints: ^4.0.0
-  test: ^1.24.0
-
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter

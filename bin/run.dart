@@ -44,6 +44,33 @@ class _Debouncer {
 
 /// Script entry point. Decides whether to run once or start watch mode.
 void main(List<String> args) async {
+  final setSeedArg = args.firstWhere(
+    (arg) => arg.startsWith('--set-randomize-ordering-seed'),
+    orElse: () => '',
+  );
+
+  if (setSeedArg.isNotEmpty) {
+    String? seedValue;
+    if (setSeedArg.contains('=')) {
+      seedValue = setSeedArg.split('=')[1];
+      if (seedValue.toLowerCase() == 'fixed') {
+        seedValue = null;
+      }
+    } else {
+      seedValue = null;
+    }
+
+    _updateSeedInCache(seedValue);
+
+    if (seedValue == null) {
+      print(
+          '$_ansiGreen Ordering seed removed. Tests will run in their default fixed order.$_ansiReset');
+    } else {
+      print('$_ansiGreen Ordering seed set to: $seedValue$_ansiReset');
+    }
+    exit(0);
+  }
+
   if (args.contains('--version')) {
     await _printFlutterVersion();
   }
@@ -69,12 +96,10 @@ Future<void> _printFlutterVersion() async {
     if (result.exitCode == 0) {
       print(result.stdout.toString().trim());
     } else {
-      // CORRECTED: Added space after the ANSI code.
       print(
           '$_ansiRed Could not determine Flutter version. Error:\n${result.stderr}$_ansiReset');
     }
   } catch (e) {
-    // CORRECTED: Added space after the ANSI code.
     print('$_ansiRed Error running "flutter --version": $e$_ansiReset');
   }
   print('$_ansiBold-----------------------$_ansiReset\n');
@@ -167,17 +192,57 @@ Future<bool> _runSingleTest(List<String> args) async {
   final skipped = <String>[];
   final activeTests = <int, _TestInfo>{};
   final activeErrorPrints = <int, String>{};
+  final activeErrorEvents = <int, _RuntimeError>{};
   final errorLog = <String>[];
 
   final cacheData = _readCacheData();
   int totalTests = cacheData.totalTests;
   final lastRunDuration = cacheData.lastDuration;
+  final cachedSeed = cacheData.orderingSeed;
   int? exitCode;
 
   final isDebugMode = args.contains('--debug');
   final isRerunFailed = args.contains('--rerun-failed');
-  var filteredArgs =
-      args.where((arg) => arg != '--debug' && arg != '--rerun-failed').toList();
+
+  var filteredArgs = args
+      .where((arg) =>
+          arg != '--debug' &&
+          arg != '--rerun-failed' &&
+          !arg.startsWith('--test-randomize-ordering-seed='))
+      .toList();
+
+  // --- MODIFIED: Seed Generation and Application Logic ---
+  final overrideSeedArg = args.firstWhere(
+    (arg) => arg.startsWith('--test-randomize-ordering-seed='),
+    orElse: () => '',
+  );
+
+  String? configuredSeed;
+  var isOverride = false;
+
+  if (overrideSeedArg.isNotEmpty) {
+    configuredSeed = overrideSeedArg.split('=')[1];
+    isOverride = true;
+  } else {
+    configuredSeed = cachedSeed;
+  }
+
+  if (configuredSeed != null) {
+    String seedToApply;
+    if (configuredSeed.toLowerCase() == 'random') {
+      // Generate a new random seed for this run.
+      seedToApply = Random().nextInt(4294967295).toString();
+      print(
+          '$_ansiYellow Running with ordering seed: random (using $seedToApply)$_ansiReset');
+    } else {
+      // Use the specific seed from cache or override.
+      seedToApply = configuredSeed;
+      final seedType = isOverride ? 'override' : 'cached';
+      print(
+          '$_ansiYellow Running with $seedType ordering seed: $seedToApply$_ansiReset');
+    }
+    filteredArgs.add('--test-randomize-ordering-seed=$seedToApply');
+  }
 
   final stopwatch = Stopwatch()..start();
 
@@ -194,7 +259,7 @@ Future<bool> _runSingleTest(List<String> args) async {
         try {
           final filePath = Uri.parse(failure.info.url!).toFilePath();
           (failedTestsByFile[filePath] ??= []).add(failure.info.name);
-        } catch (e) {/* Ignore */}
+        } catch (e) {/* Ignored */}
       }
     }
 
@@ -208,7 +273,9 @@ Future<bool> _runSingleTest(List<String> args) async {
     final allFailedNames =
         cacheData.failedTests.map((t) => RegExp.escape(t.info.name)).join('|');
     final regex = '^($allFailedNames)\$';
-    filteredArgs = [...filePathsToRun, '--name', regex];
+    filteredArgs.addAll(['--name', regex]);
+    filteredArgs = filePathsToRun
+      ..addAll(filteredArgs.where((arg) => !filePathsToRun.contains(arg)));
     totalTests = cacheData.failedTests.length;
     print(
         '$_ansiYellow Rerunning ${cacheData.failedTests.length} failed tests across ${filePathsToRun.length} files...$_ansiReset');
@@ -278,21 +345,46 @@ Future<bool> _runSingleTest(List<String> args) async {
                 break;
               case 'failure':
               case 'error':
-                final errorLog = activeErrorPrints[testID] ??
-                    'Unknown error: No exception log was captured.';
-                failed.add(_Failure(testInfo, errorLog));
+                String formattedError;
+                final assertionLog = activeErrorPrints[testID];
+                final runtimeError = activeErrorEvents[testID];
+
+                if (assertionLog != null) {
+                  final primaryError = _extractPrimaryError(assertionLog);
+                  formattedError =
+                      '\n══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞══════════\n'
+                      '$_ansiBold$primaryError$_ansiReset\n'
+                      '════════════════════════════════════════════════════════════';
+                } else if (runtimeError != null) {
+                  final firstStackLine =
+                      _findFirstRelevantStackLine(runtimeError.stackTrace);
+                  formattedError =
+                      '$_ansiBold${runtimeError.message}$_ansiReset\n  $firstStackLine';
+                } else {
+                  formattedError = 'Unknown error occurred.';
+                }
+
+                failed.add(_Failure(testInfo, formattedError));
                 break;
             }
           }
           activeTests.remove(testID);
           activeErrorPrints.remove(testID);
+          activeErrorEvents.remove(testID);
         } else if (type == 'print') {
           final testID = json['testID'] as int;
           final message = json['message'] as String;
-
           if (message.startsWith('══╡ EXCEPTION CAUGHT') &&
               !activeErrorPrints.containsKey(testID)) {
             activeErrorPrints[testID] = message;
+          }
+        } else if (type == 'error') {
+          final testID = json['testID'] as int;
+          if (!activeErrorEvents.containsKey(testID)) {
+            activeErrorEvents[testID] = _RuntimeError(
+              json['error'] as String,
+              json['stackTrace'] as String,
+            );
           }
         }
 
@@ -307,7 +399,7 @@ Future<bool> _runSingleTest(List<String> args) async {
 
     if (!isRerunFailed) {
       if (newTotalTests > 0) totalTests = newTotalTests;
-      _writeCacheData(totalTests, stopwatch.elapsed, failed);
+      _writeCacheData(totalTests, stopwatch.elapsed, failed, cachedSeed);
     }
   } finally {
     if (!isDebugMode) {
@@ -346,12 +438,7 @@ Future<bool> _runSingleTest(List<String> args) async {
       final testName = failure.info.name;
 
       print('$_ansiRed[FAIL] $fileName: $testName$_ansiReset');
-
-      final primaryError = _extractPrimaryError(failure.fullErrorLog);
-
-      print('\n══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞══════════');
-      print('$_ansiBold$primaryError$_ansiReset');
-      print('════════════════════════════════════════════════════════════');
+      print(failure.formattedError);
 
       if (failure.info.url != null) {
         try {
@@ -388,20 +475,38 @@ Future<bool> _runSingleTest(List<String> args) async {
 }
 
 String _extractPrimaryError(String log) {
-  final lines = log.split('\n');
+  if (log.contains('was thrown')) {
+    final lines = log.split('\n');
+    var startIndex = lines.indexWhere((line) => line.contains('was thrown'));
+    if (startIndex == -1) return log;
 
-  var startIndex = lines.indexWhere((line) => line.contains('was thrown'));
-  if (startIndex == -1) return log;
+    startIndex++;
 
-  startIndex++;
+    var endIndex = lines.indexWhere(
+        (line) =>
+            line.isEmpty || line.startsWith('When the exception was thrown'),
+        startIndex);
+    if (endIndex == -1) endIndex = lines.length;
 
-  var endIndex = lines.indexWhere(
-      (line) =>
-          line.isEmpty || line.startsWith('When the exception was thrown'),
-      startIndex);
-  if (endIndex == -1) endIndex = lines.length;
+    return lines.sublist(startIndex, endIndex).join('\n').trim();
+  }
+  return log;
+}
 
-  return lines.sublist(startIndex, endIndex).join('\n').trim();
+String _findFirstRelevantStackLine(String stackTrace) {
+  const frameworkPaths = [
+    'package:flutter_test/',
+    'package:test_api/',
+    'package:matcher/',
+    'dart:async',
+  ];
+
+  final firstUserCodeLine = stackTrace.split('\n').firstWhere(
+        (line) => !frameworkPaths.any((p) => line.contains(p)),
+        orElse: () => '',
+      );
+
+  return firstUserCodeLine.trim();
 }
 
 void _updateDisplay(int passed, int failed, int skipped, int total,
@@ -451,10 +556,16 @@ class _TestInfo {
   }
 }
 
+class _RuntimeError {
+  final String message;
+  final String stackTrace;
+  _RuntimeError(this.message, this.stackTrace);
+}
+
 class _Failure {
   final _TestInfo info;
-  String fullErrorLog;
-  _Failure(this.info, this.fullErrorLog);
+  String formattedError;
+  _Failure(this.info, this.formattedError);
 
   Map<String, dynamic> toJson() => {
         'name': info.name,
@@ -466,7 +577,9 @@ class _CacheData {
   final int totalTests;
   final Duration lastDuration;
   final List<_Failure> failedTests;
-  _CacheData(this.totalTests, this.lastDuration, this.failedTests);
+  final String? orderingSeed;
+  _CacheData(
+      this.totalTests, this.lastDuration, this.failedTests, this.orderingSeed);
 }
 
 _CacheData _readCacheData() {
@@ -482,27 +595,40 @@ _CacheData _readCacheData() {
                   _TestInfo(-1, e['name'] as String, e['url'] as String?), ''))
               .toList() ??
           [];
-      return _CacheData(
-          totalTests, Duration(seconds: lastSeconds), failedTests);
+      final orderingSeed = json['orderingSeed'] as String?;
+      return _CacheData(totalTests, Duration(seconds: lastSeconds), failedTests,
+          orderingSeed);
     }
   } catch (e) {
     // Ignore errors and return default.
   }
-  return _CacheData(0, Duration.zero, []);
+  return _CacheData(0, Duration.zero, [], null);
 }
 
-void _writeCacheData(int total, Duration duration, List<_Failure> failures) {
+void _writeCacheData(
+    int total, Duration duration, List<_Failure> failures, String? seed) {
   try {
     final cacheFile = File('${Directory.current.path}/$_cacheFileName');
     final data = {
       'totalTests': total,
       'lastDurationInSeconds': duration.inSeconds,
       'failedTests': failures.map((f) => f.toJson()).toList(),
+      'orderingSeed': seed,
     };
     cacheFile.writeAsStringSync(jsonEncode(data));
   } catch (e) {
     // If we can't write the cache file, it's not a critical error.
   }
+}
+
+void _updateSeedInCache(String? seed) {
+  final currentCache = _readCacheData();
+  _writeCacheData(
+    currentCache.totalTests,
+    currentCache.lastDuration,
+    currentCache.failedTests,
+    seed,
+  );
 }
 
 String _formatDuration(Duration d) {
